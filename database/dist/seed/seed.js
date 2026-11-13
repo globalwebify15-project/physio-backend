@@ -337,10 +337,10 @@ async function seed() {
         // 5. Seed Super Admin User (Pass: admin123hashed - for now stored plain/mock hash, we can run bcrypt inside next-auth/jwt)
         console.log('Seeding admin user...');
         await User_1.User.create({
-            mobile: '9999999999',
-            email: 'admin@globalwebify.com',
+            mobile: '+919110912544',
+            email: 'admin@quickphysio24.com',
             role: 'superadmin',
-            passwordHash: '$2a$10$bGrsEbNe0ay7GxSMjxu0bulFYnMS41VyEbnC68Un4pvESmTSt6d42', // hashed bcrypt of "admin123"
+            passwordHash: '$2a$10$wKxN0sLdY/Wb4pP1vX/bO.n7c/2u21U6WlZvZ3Mv7wI1gJpB9zK6e', // QuickPhysio24@SuperAdmin#2026!
             isActive: true
         });
         console.log('Database seeding successfully completed.');

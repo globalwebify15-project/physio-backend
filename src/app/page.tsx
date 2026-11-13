@@ -35,9 +35,12 @@ export default function HomePage() {
         <div style={{ display: "inline-block", padding: "6px 14px", background: "#0284c722", color: "#38bdf8", borderRadius: 20, fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
           🟢 API Server Online • v1.0.0
         </div>
-        <h1 style={{ fontSize: 32, margin: "0 0 8px 0", color: "#ffffff", fontWeight: 700 }}>
-          QuickPhysio24.com
-        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "0 0 8px 0" }}>
+          <img src="/quickphysio24_logo.png" alt="QuickPhysio24 Logo" style={{ width: 44, height: 44, objectFit: "contain", borderRadius: 10, background: "#ffffff", padding: 4 }} />
+          <h1 style={{ fontSize: 32, margin: 0, color: "#ffffff", fontWeight: 700 }}>
+            QuickPhysio24.com
+          </h1>
+        </div>
         <p style={{ color: "#94a3b8", fontSize: 16, margin: 0 }}>
           Backend REST API & Database Services Portal
         </p>

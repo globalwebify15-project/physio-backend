@@ -81,8 +81,9 @@ export default async function BackendCompliancePage({ params }: { params: Promis
       <header style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '16px 16px 12px' }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <Link href="/" style={{ textDecoration: 'none', color: '#0f172a', fontWeight: 800, fontSize: 20 }}>
-              QuickPhysio<span style={{ color: '#0f766e' }}>24.com</span>
+            <Link href="/" style={{ textDecoration: 'none', color: '#0f172a', fontWeight: 800, fontSize: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <img src="/quickphysio24_logo.png" alt="QuickPhysio24" style={{ width: 34, height: 34, objectFit: 'contain', borderRadius: 8 }} />
+              <span>QuickPhysio<span style={{ color: '#0f766e' }}>24.com</span></span>
             </Link>
             <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4' }}>
               Synergy Global Hospital Dept

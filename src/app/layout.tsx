@@ -3,6 +3,10 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "QuickPhysio24.com API",
   description: "Backend API and services portal for QuickPhysio24.com",
+  icons: {
+    icon: '/quickphysio24_logo.png',
+    apple: '/quickphysio24_logo.png',
+  },
 };
 
 export default function RootLayout({

@@ -34,7 +34,7 @@ export const DEFAULT_SMTP_CONFIG: SmtpConfig = {
 };
 
 export const DEFAULT_RECIPIENTS_CONFIG: NotificationRecipientsConfig = {
-  clinicAlertEmails: ['contact@quickphysio24.com', 'admin@globalwebify.com'],
+  clinicAlertEmails: ['contact@quickphysio24.com', 'admin@quickphysio24.com'],
   clinicAlertPhones: ['+919110912544', '+919693233447'],
   sendToPatientEmail: true,
   sendToPatientSms: true,

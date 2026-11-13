@@ -121,12 +121,12 @@ async function seedRealClinicData() {
   console.log('Connected.');
 
   // 1. Super Admin Account
-  const adminPasswordHash = await bcrypt.hash('admin123', 10);
+  const adminPasswordHash = await bcrypt.hash('QuickPhysio24@SuperAdmin#2026!', 10);
   await User.findOneAndUpdate(
-    { email: 'admin@globalwebify.com' },
+    { email: 'admin@quickphysio24.com' },
     {
       mobile: '+919110912544',
-      email: 'admin@globalwebify.com',
+      email: 'admin@quickphysio24.com',
       role: 'superadmin',
       passwordHash: adminPasswordHash,
       isActive: true,

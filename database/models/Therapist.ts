@@ -25,8 +25,8 @@ export interface ITherapist extends Document {
 const TherapistSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    mobile: { type: String, required: true, unique: true },
+    email: { type: String, required: true },
+    mobile: { type: String, required: true },
     profilePhoto: { type: String },
     qualification: { type: String, required: true },
     experience: { type: Number, required: true, default: 0 },

@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     const patientMobile = appointment?.patientId?.emergencyContact?.phone || payment?.patientMobile || '+91 91109 12544';
     const patientAddr = appointment?.patientId?.savedAddresses?.[0]?.addressLine ||
       appointment?.patientId?.savedAddresses?.[0] ||
-      (appointment?.sessionType === 'home' ? 'Patient Residence, Ranchi' : 'In-Clinic Consultation (Ashok Nagar)');
+      (appointment?.sessionType === 'home' ? 'Patient Residence, Ranchi' : 'In-Clinic Consultation (Synergy Global Hospital, Bariatu)');
 
     const doctorName = appointment?.therapistId?.name || 'Dr. Rajnish Bariyar & Dr. Priyanka Bariyar';
     const doctorQual = appointment?.therapistId?.qualification || 'BPT, MIAP, JSCPT Registered';
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
           </div>
         </div>
         <p class="clinic-address">
-          Near Ashok Nagar Rd No 1, opp. Overhead Water Tank, Ranchi, Jharkhand 834002<br>
+          Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009<br>
           MIAP Certified • JSCPT Registered • Govt. Recognized Center<br>
           Helpline: +91 91109 12544 | Support: contact@QuickPhysio24.com
         </p>

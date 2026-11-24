@@ -65,7 +65,10 @@ export async function POST(request: NextRequest) {
       // Update appointment status to confirmed
       if (payment.appointmentId) {
         const appointment = await Appointment.findById(payment.appointmentId)
-          .populate('patientId')
+          .populate({
+            path: 'patientId',
+            populate: { path: 'userId', select: 'email mobile' }
+          })
           .populate('therapistId')
           .populate('serviceId');
 

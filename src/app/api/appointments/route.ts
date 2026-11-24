@@ -248,7 +248,10 @@ export async function POST(request: NextRequest) {
 
     // Populate for response
     const populated = await Appointment.findById(appointment._id)
-      .populate('patientId')
+      .populate({
+        path: 'patientId',
+        populate: { path: 'userId', select: 'email mobile' }
+      })
       .populate('serviceId')
       .populate('therapistId');
 

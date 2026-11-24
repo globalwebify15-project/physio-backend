@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { CMS } from 'database';
+import { CMS, User, Patient, Therapist } from 'database';
 
 export interface SmtpConfig {
   host: string;
@@ -200,32 +200,242 @@ export async function sendBookingConfirmationEmails(data: {
   const serviceTitle = service?.title || 'Comprehensive Physiotherapy Care';
   const patientName = patient?.name || 'Valued Patient';
   const patientMobile = patient?.emergencyContact?.phone || patient?.mobile || 'N/A';
-  const patientEmail = patient?.email || (patient?.userId && patient.userId.email ? patient.userId.email : null);
-  const doctorName = therapist?.name || 'Dr. Rajnish Bariyar & Dr. Priyanka Bariyar';
-  const doctorEmail = therapist?.email || null;
-  const address = appointment.address || 'Ashok Nagar Clinic, Ranchi';
+  
+  // Robust Patient Email Resolution
+  let patientEmail: string | null = patient?.email || (patient?.userId && typeof patient.userId === 'object' && patient.userId.email ? patient.userId.email : null);
 
-  // Gather target recipients according to configured rules
-  const targetEmails: { email: string; role: 'patient' | 'doctor' | 'admin' }[] = [];
-
-  if (recipientRules.sendToPatientEmail && patientEmail && patientEmail.includes('@')) {
-    targetEmails.push({ email: patientEmail, role: 'patient' });
+  if (!patientEmail && patient?.userId) {
+    try {
+      const userDoc = await User.findById(patient.userId).select('email mobile').lean();
+      if (userDoc?.email) patientEmail = userDoc.email;
+    } catch (e) {
+      console.warn('[Mailer] Could not query user by patient.userId:', e);
+    }
   }
+
+  if (!patientEmail && appointment?.patientId) {
+    try {
+      const pId = typeof appointment.patientId === 'object' ? appointment.patientId._id : appointment.patientId;
+      const patientDoc = await Patient.findById(pId).lean();
+      if (patientDoc?.userId) {
+        const userDoc = await User.findById(patientDoc.userId).select('email mobile').lean();
+        if (userDoc?.email) patientEmail = userDoc.email;
+      }
+    } catch (e) {
+      console.warn('[Mailer] Could not query patient by appointment.patientId:', e);
+    }
+  }
+
+  const doctorName = therapist?.name || 'Dr. Rajnish Bariyar & Dr. Priyanka Bariyar';
+  let doctorEmail: string | null = therapist?.email || null;
+  if (!doctorEmail && appointment?.therapistId) {
+    try {
+      const therapistDoc = await Therapist.findById(appointment.therapistId).lean();
+      if (therapistDoc?.email) doctorEmail = therapistDoc.email;
+    } catch (e) {
+      console.warn('[Mailer] Could not query therapist by appointment.therapistId:', e);
+    }
+  }
+
+  const clinicDefaultAddress = 'Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009';
+  const address = (appointment.sessionType === 'home' || appointment.visitType === 'home')
+    ? (appointment.address || 'Patient Residence (Doorstep Home Visit)')
+    : (appointment.address && !appointment.address.toLowerCase().includes('ashok nagar') ? appointment.address : clinicDefaultAddress);
+
+  // Separate target dispatch queue
+  interface EmailTask {
+    to: string;
+    subject: string;
+    html: string;
+  }
+  const emailTasks: EmailTask[] = [];
+
+  // 1. Patient Confirmation Email
+  if (recipientRules.sendToPatientEmail && patientEmail && patientEmail.includes('@')) {
+    emailTasks.push({
+      to: patientEmail,
+      subject: `✓ Booking Confirmed: ${serviceTitle} (#${invNo}) | QuickPhysio24.com`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 24px 12px; color: #0f172a;">
+          <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06);">
+            <div style="background: linear-gradient(135deg, #094d47, #0f766e); padding: 24px; text-align: center; color: #ffffff;">
+              <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px;">QuickPhysio24.com</h1>
+              <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #ccfbf1; font-weight: 700;">
+                Appointment Confirmation & Clinical Summary
+              </p>
+            </div>
+            <div style="padding: 24px;">
+              <div style="background: #f0fdfa; border: 1.5px solid #a7f3d0; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; text-align: center;">
+                <span style="color: #047857; font-weight: 900; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  ✓ Appointment Confirmed (ID: #${invNo})
+                </span>
+              </div>
+              <p style="font-size: 14px; color: #334155; line-height: 1.6; margin-bottom: 16px;">
+                Hello <strong>${patientName}</strong>, your physiotherapy consultation with <strong>QuickPhysio24.com</strong> has been scheduled successfully.
+              </p>
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+                <tbody>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Treatment Service:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 800; text-align: right;">${serviceTitle}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Date & Time Slot:</td>
+                    <td style="padding: 10px 0; color: #0f766e; font-weight: 800; text-align: right;">${dateStr} • ${timeSlot}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Visit Mode:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${visitType}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Assigned Specialist:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${doctorName}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Patient Contact:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${patientMobile}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Consultation Location:</td>
+                    <td style="padding: 10px 0; color: #334155; font-weight: 600; text-align: right;">${address}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #44403c; line-height: 1.5;">
+                <strong style="color: #0f172a; display: block; margin-bottom: 4px;">Patient Guidelines:</strong>
+                • For Home Visits: Please keep previous MRI / X-Ray / clinical reports accessible.<br>
+                • For Clinic Visits: Arrive 10 minutes prior at Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009 center.<br>
+                • Emergency / Helpline: Call <strong>+91 91109 12544</strong> or WhatsApp <strong>+91 96932 33447</strong>.
+              </div>
+              <div style="text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                <p style="font-size: 11px; color: #94a3b8; margin: 0;">
+                  QuickPhysio24.com • Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009<br>
+                  MIAP Certified • JSCPT Registered Physical Rehabilitation Center
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  }
+
+  // 2. Doctor / Consultant Assignment Email
+  const handledEmails = new Set<string>();
+  if (patientEmail) handledEmails.add(patientEmail.toLowerCase());
 
   if (recipientRules.sendToDoctorEmail && doctorEmail && doctorEmail.includes('@')) {
-    targetEmails.push({ email: doctorEmail, role: 'doctor' });
+    handledEmails.add(doctorEmail.toLowerCase());
+    emailTasks.push({
+      to: doctorEmail,
+      subject: `📋 New Consultation Assigned: ${patientName} (#${invNo}) | QuickPhysio24`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 24px 12px; color: #0f172a;">
+          <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06);">
+            <div style="background: linear-gradient(135deg, #094d47, #0f766e); padding: 24px; text-align: center; color: #ffffff;">
+              <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px;">QuickPhysio24.com</h1>
+              <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #ccfbf1; font-weight: 700;">
+                Doctor Roster & Patient Consultation Assignment
+              </p>
+            </div>
+            <div style="padding: 24px;">
+              <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; text-align: center;">
+                <span style="color: #166534; font-weight: 900; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  📋 New Consultation Assigned (ID: #${invNo})
+                </span>
+              </div>
+              <p style="font-size: 14px; color: #334155; line-height: 1.6; margin-bottom: 16px;">
+                Dear <strong>${doctorName}</strong>, a new patient appointment has been scheduled and assigned to your roster.
+              </p>
+              <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+                <tbody>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Patient Name:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 800; text-align: right;">${patientName}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Patient Phone:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 800; text-align: right;">${patientMobile}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Patient Email:</td>
+                    <td style="padding: 10px 0; color: #0f766e; font-weight: 700; text-align: right;">${patientEmail || 'Not Provided'}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Treatment Service:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${serviceTitle}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Date & Time Slot:</td>
+                    <td style="padding: 10px 0; color: #0f766e; font-weight: 800; text-align: right;">${dateStr} • ${timeSlot}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Visit Mode:</td>
+                    <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${visitType}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Consultation Venue:</td>
+                    <td style="padding: 10px 0; color: #334155; font-weight: 600; text-align: right;">${address}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #475569; line-height: 1.5;">
+                <strong style="color: #0f172a; display: block; margin-bottom: 4px;">Practitioner Notes:</strong>
+                • Please review patient details prior to scheduled consultation.<br>
+                • Clinic Center: Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009.<br>
+                • Reception Desk: +91 91109 12544 | contact@quickphysio24.com
+              </div>
+              <div style="text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                <p style="font-size: 11px; color: #94a3b8; margin: 0;">
+                  QuickPhysio24.com • Clinical Administration Alert System
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
   }
 
+  // 3. Clinic Admin Alerts (Only if distinct from doctor email)
   if (recipientRules.sendToClinicAdmin && recipientRules.clinicAlertEmails.length > 0) {
     recipientRules.clinicAlertEmails.forEach((adminEmail) => {
       const clean = adminEmail.trim();
-      if (clean && clean.includes('@') && !targetEmails.some((t) => t.email.toLowerCase() === clean.toLowerCase())) {
-        targetEmails.push({ email: clean, role: 'admin' });
+      if (clean && clean.includes('@') && !handledEmails.has(clean.toLowerCase())) {
+        handledEmails.add(clean.toLowerCase());
+        emailTasks.push({
+          to: clean,
+          subject: `🔔 New Booking Alert: #${invNo} - ${patientName} (${visitType})`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 24px 12px; color: #0f172a;">
+              <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06);">
+                <div style="background: linear-gradient(135deg, #094d47, #0f766e); padding: 24px; text-align: center; color: #ffffff;">
+                  <h1 style="margin: 0; font-size: 22px; font-weight: 900;">QuickPhysio24.com</h1>
+                  <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; color: #ccfbf1; font-weight: 700;">
+                    Clinic Administration Booking Alert
+                  </p>
+                </div>
+                <div style="padding: 24px;">
+                  <p style="font-size: 14px; color: #334155;">A new booking has been confirmed on the platform:</p>
+                  <ul style="font-size: 13px; color: #334155; line-height: 1.8;">
+                    <li><strong>Appointment ID:</strong> #${invNo}</li>
+                    <li><strong>Patient:</strong> ${patientName} (${patientMobile})</li>
+                    <li><strong>Specialist:</strong> ${doctorName}</li>
+                    <li><strong>Service:</strong> ${serviceTitle}</li>
+                    <li><strong>Date &amp; Slot:</strong> ${dateStr} • ${timeSlot}</li>
+                    <li><strong>Visit Type:</strong> ${visitType}</li>
+                    <li><strong>Location:</strong> ${address}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          `,
+        });
       }
     });
   }
 
-  if (targetEmails.length === 0) {
+  if (emailTasks.length === 0) {
     return { sentCount: 0, errors: ['No valid recipient email addresses found'] };
   }
 
@@ -233,91 +443,18 @@ export async function sendBookingConfirmationEmails(data: {
   let sentCount = 0;
   const errors: string[] = [];
 
-  const htmlContent = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 24px 12px; color: #0f172a;">
-      <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06);">
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #094d47, #0f766e); padding: 24px; text-align: center; color: #ffffff;">
-          <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.5px;">QuickPhysio24.com</h1>
-          <p style="margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #ccfbf1; font-weight: 700;">
-            Appointment Confirmation & Clinical Summary
-          </p>
-        </div>
-
-        <div style="padding: 24px;">
-          <!-- Status Stamp -->
-          <div style="background: #f0fdfa; border: 1.5px solid #a7f3d0; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; text-align: center;">
-            <span style="color: #047857; font-weight: 900; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">
-              ✓ Appointment Confirmed (ID: #${invNo})
-            </span>
-          </div>
-
-          <p style="font-size: 13px; color: #334155; line-height: 1.6; margin-bottom: 16px;">
-            Hello <strong>${patientName}</strong>, your physiotherapy consultation with <strong>QuickPhysio24.com</strong> has been scheduled successfully.
-          </p>
-
-          <!-- Appointment Details Grid -->
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
-            <tbody>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Treatment Service:</td>
-                <td style="padding: 10px 0; color: #0f172a; font-weight: 800; text-align: right;">${serviceTitle}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Date & Time Slot:</td>
-                <td style="padding: 10px 0; color: #0f766e; font-weight: 800; text-align: right;">${dateStr} • ${timeSlot}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Visit Mode:</td>
-                <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${visitType}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Assigned Specialist:</td>
-                <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${doctorName}</td>
-              </tr>
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Patient Contact:</td>
-                <td style="padding: 10px 0; color: #0f172a; font-weight: 700; text-align: right;">${patientMobile}</td>
-              </tr>
-              <tr>
-                <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Consultation Location:</td>
-                <td style="padding: 10px 0; color: #334155; font-weight: 600; text-align: right;">${address}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Instructions Card -->
-          <div style="background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 12px; color: #44403c; line-height: 1.5;">
-            <strong style="color: #0f172a; display: block; margin-bottom: 4px;">Patient Guidelines:</strong>
-            • For Home Visits: Please keep previous MRI / X-Ray / clinical reports accessible.<br>
-            • For Clinic Visits: Arrive 10 minutes prior at Ashok Nagar Road No. 1 center.<br>
-            • Emergency / Helpline: Call <strong>+91 91109 12544</strong> or WhatsApp <strong>+91 96932 33447</strong>.
-          </div>
-
-          <div style="text-align: center; border-top: 1px solid #f1f5f9; padding-top: 16px;">
-            <p style="font-size: 11px; color: #94a3b8; margin: 0;">
-              QuickPhysio24.com • Ashok Nagar Rd No 1, opp. Overhead Water Tank, Ranchi, Jharkhand 834002<br>
-              MIAP Certified • JSCPT Registered Physical Rehabilitation Center
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // Send to all targets in parallel
   await Promise.all(
-    targetEmails.map(async (target) => {
+    emailTasks.map(async (task) => {
       try {
         await transporter.sendMail({
           from: `"${smtpConfig.senderName}" <${smtpConfig.senderEmail || smtpConfig.user}>`,
-          to: target.email,
-          subject: `[Confirmed] QuickPhysio24 Appointment #${invNo} - ${patientName} (${visitType})`,
-          html: htmlContent,
+          to: task.to,
+          subject: task.subject,
+          html: task.html,
         });
         sentCount++;
       } catch (e: any) {
-        errors.push(`Failed sending to ${target.email}: ${e.message}`);
+        errors.push(`Failed sending to ${task.to}: ${e.message}`);
       }
     })
   );
@@ -349,7 +486,32 @@ export async function sendPaymentInvoiceEmail(data: {
   const paymentMethod = payment.paymentMethod || 'Razorpay Online';
   const txnId = payment.razorpayPaymentId || payment.razorpayOrderId || `TXN_${invNo}`;
   const patientName = patient?.name || 'Verified Patient';
-  const patientEmail = patient?.email || (patient?.userId && patient.userId.email ? patient.userId.email : null);
+  
+  // Robust Patient Email Resolution for Invoices
+  let patientEmail: string | null = patient?.email || (patient?.userId && typeof patient.userId === 'object' && patient.userId.email ? patient.userId.email : null);
+
+  if (!patientEmail && patient?.userId) {
+    try {
+      const userDoc = await User.findById(patient.userId).select('email mobile').lean();
+      if (userDoc?.email) patientEmail = userDoc.email;
+    } catch (e) {
+      console.warn('[Mailer] Could not query user by patient.userId for invoice:', e);
+    }
+  }
+
+  if (!patientEmail && appointment?.patientId) {
+    try {
+      const pId = typeof appointment.patientId === 'object' ? appointment.patientId._id : appointment.patientId;
+      const patientDoc = await Patient.findById(pId).lean();
+      if (patientDoc?.userId) {
+        const userDoc = await User.findById(patientDoc.userId).select('email mobile').lean();
+        if (userDoc?.email) patientEmail = userDoc.email;
+      }
+    } catch (e) {
+      console.warn('[Mailer] Could not query patient by appointment.patientId for invoice:', e);
+    }
+  }
+
   const patientMobile = patient?.emergencyContact?.phone || patient?.mobile || 'N/A';
   const doctorName = therapist?.name || 'Dr. Rajnish Bariyar & Dr. Priyanka Bariyar';
   const serviceTitle = service?.title || 'Physical Therapy Consultation';
@@ -362,7 +524,7 @@ export async function sendPaymentInvoiceEmail(data: {
   // Also include clinic alert emails
   recipientRules.clinicAlertEmails.forEach((email) => {
     const clean = email.trim();
-    if (clean && clean.includes('@') && !targetEmails.includes(clean)) {
+    if (clean && clean.includes('@') && !targetEmails.some((t) => t.toLowerCase() === clean.toLowerCase())) {
       targetEmails.push(clean);
     }
   });
@@ -446,7 +608,8 @@ export async function sendPaymentInvoiceEmail(data: {
           </table>
 
           <div style="background: #f0fdfa; border: 1px solid #ccfbf1; border-radius: 12px; padding: 12px; text-align: center; font-size: 11px; color: #0f766e; margin-top: 16px;">
-            🔒 Computer generated official digital receipt • QuickPhysio24.com
+            🔒 Computer generated official digital receipt • QuickPhysio24.com<br>
+            Physiotherapy Department, Synergy Global Hospital, Bariatu, Ranchi - 834009
           </div>
         </div>
       </div>
